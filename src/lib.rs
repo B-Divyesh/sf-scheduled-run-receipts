@@ -1,3 +1,19 @@
+//! Core receipt, schedule, and evidence primitives used by the `srr` CLI.
+//!
+//! Five-field schedules are evaluated in UTC:
+//!
+//! ```
+//! use chrono::{DateTime, Utc};
+//! use scheduled_run_receipts::{expected_between, parse_duration};
+//!
+//! let start: DateTime<Utc> = "2026-08-24T00:00:00Z".parse()?;
+//! let end: DateTime<Utc> = "2026-08-25T03:00:00Z".parse()?;
+//! let slots = expected_between("0 2 * * *", start, end)?;
+//! assert_eq!(slots.len(), 2);
+//! assert_eq!(parse_duration("15m")?.num_minutes(), 15);
+//! # Ok::<(), anyhow::Error>(())
+//! ```
+
 use std::{
     collections::{BTreeMap, HashSet},
     fs,
@@ -24,6 +40,8 @@ pub struct State {
     pub created_at: DateTime<Utc>,
     pub jobs: BTreeMap<String, Job>,
     pub receipts: Vec<Receipt>,
+    #[serde(default)]
+    pub seen_nonces: Vec<SeenNonce>,
 }
 
 impl Default for State {
@@ -33,8 +51,15 @@ impl Default for State {
             created_at: Utc::now(),
             jobs: BTreeMap::new(),
             receipts: vec![],
+            seen_nonces: vec![],
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeenNonce {
+    pub value: String,
+    pub accepted_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -317,9 +342,13 @@ pub fn accept_token(state: &mut State, token: &str, now: DateTime<Utc>) -> Resul
         bail!("receipt time is more than 5 minutes in the future");
     }
     if state
-        .receipts
+        .seen_nonces
         .iter()
-        .any(|r| r.payload.nonce == payload.nonce)
+        .any(|nonce| nonce.value == payload.nonce)
+        || state.receipts.iter().any(|receipt| {
+            receipt.payload.nonce == payload.nonce
+                && receipt.accepted_at >= now - Duration::days(RETENTION_DAYS)
+        })
     {
         bail!("receipt replay rejected: nonce was already accepted");
     }
@@ -333,10 +362,14 @@ pub fn accept_token(state: &mut State, token: &str, now: DateTime<Utc>) -> Resul
         accepted_at: now,
         signature: URL_SAFE_NO_PAD.encode(signature),
     };
+    state.seen_nonces.push(SeenNonce {
+        value: receipt.payload.nonce.clone(),
+        accepted_at: now,
+    });
     state.receipts.push(receipt.clone());
     state
-        .receipts
-        .retain(|r| r.accepted_at >= now - Duration::days(RETENTION_DAYS));
+        .seen_nonces
+        .retain(|nonce| nonce.accepted_at >= now - Duration::days(RETENTION_DAYS));
     Ok(receipt)
 }
 
@@ -589,6 +622,30 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("replay")
+        );
+    }
+
+    #[test]
+    fn rejects_tampered_and_stale_receipts() {
+        let now = dt("2026-08-28T02:02:00Z");
+        let mut state = State::default();
+        add_job(&mut state, "backup", "0 2 * * *", Duration::minutes(15)).unwrap();
+        let job = state.jobs["backup"].clone();
+        let payload = issue_payload(&job, Event::Start, "r1", None, None, now).unwrap();
+        let token = sign_payload(&payload, &job.secret).unwrap();
+        let mut tampered = token.into_bytes();
+        let last = tampered.len() - 1;
+        tampered[last] = if tampered[last] == b'A' { b'B' } else { b'A' };
+        assert!(accept_token(&mut state, std::str::from_utf8(&tampered).unwrap(), now).is_err());
+
+        let stale_time = now - Duration::days(8);
+        let stale = issue_payload(&job, Event::Start, "old", None, None, stale_time).unwrap();
+        let stale_token = sign_payload(&stale, &job.secret).unwrap();
+        assert!(
+            accept_token(&mut state, &stale_token, now)
+                .unwrap_err()
+                .to_string()
+                .contains("older")
         );
     }
 

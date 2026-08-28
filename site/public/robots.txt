@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://scheduled-run-receipts.sociobot.in/sitemap.xml

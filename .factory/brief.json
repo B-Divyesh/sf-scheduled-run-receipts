@@ -3,9 +3,28 @@
   "title": "Scheduled Run Receipts",
   "territory": "devtools-data",
   "user": "A small-team operator with cron jobs, queues, or scheduled workflows who needs to prove both that a run occurred and that a missed expected run was noticed.",
+  "evidence": [
+    {
+      "url": "https://hn.algolia.com/api/v1/items/49067832",
+      "date": "2026-07-27",
+      "quote_or_summary": "Ask HN asks how teams monitor cron jobs and queue workers because URL uptime cannot show whether a scheduler stopped or a worker crashed."
+    },
+    {
+      "url": "https://dev.to/fewparts/how-to-detect-a-scheduled-run-that-never-happened-3keb",
+      "date": "2026-08-27",
+      "quote_or_summary": "The author describes the key absence-detection problem: a missed scheduled run leaves no log line to inspect."
+    }
+  ],
+  "recurrence": "Two 2026 sources independently focus on missed work rather than ordinary endpoint uptime; this is a high-severity silent-failure class for small operations.",
+  "current_workaround": "Ping an uptime service from scripts, watch logs manually, or discover the gap through stale downstream data.",
+  "incumbents_and_gap": "Healthchecks.io, Better Uptime, Uptime Kuma, and framework-specific monitors accept pings, but do not make an expected-run calendar plus portable, per-run evidence the primary local artifact.",
   "smallest_useful_product": "A CLI plus static viewer that reads an expected schedule, accepts signed run-start/run-finish receipts, detects missing/late/overlapping runs, and exports a weekly HTML evidence page.",
   "artifact_class": "cli",
   "monetization": "free",
   "constraints": "Receipt endpoints need replay protection and short retention; all schedule and run metadata should remain local by default.",
+  "success_measure": "In a 30-day pilot, the tool detects 100% of deliberately skipped runs within the configured grace window and operators can identify the last known successful run in under two minutes.",
+  "est_build_effort": "S",
+  "why_distinct": "It is an absence detector and evidence trail, not another dashboard that merely displays received pings.",
+  "confidence": 4,
   "state": "RESEARCHED"
 }

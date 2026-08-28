@@ -8,6 +8,7 @@ readme = "README.md"
 repository = "https://github.com/B-Divyesh/sf-scheduled-run-receipts"
 keywords = ["cron", "monitoring", "receipts", "cli"]
 categories = ["command-line-utilities", "development-tools"]
+exclude = ["site/", ".factory/", "e2e/", "scripts/", "package*.json", "playwright.config.ts", "vite.config.ts"]
 
 [[bin]]
 name = "srr"

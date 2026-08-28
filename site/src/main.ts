@@ -63,7 +63,6 @@ function renderReport(report: CheckReport) {
     button.className = `slot slot-${slot.state}`;
     button.setAttribute('role', 'radio');
     button.setAttribute('aria-checked', String(index === slots.length - 1));
-    button.setAttribute('aria-label', `${formatDay(slot.scheduled_at)} ${stateLabel(slot.state)}`);
     button.innerHTML = `<span class="slot-node" aria-hidden="true"></span><span>${formatDay(slot.scheduled_at)}</span><small>${stateLabel(slot.state)}</small>`;
     button.addEventListener('click', () => selectSlot(button, slot));
     button.addEventListener('keydown', (event) => {

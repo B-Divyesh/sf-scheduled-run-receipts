@@ -81,6 +81,11 @@ srr check --since 30d --json > status.json
 srr export --week 2026-08-24 --output receipts-2026-W35.html
 ```
 
+Schedule `srr check` independently at an interval shorter than your smallest
+grace window, and route exit code `2` through the notification mechanism you
+already trust. Detection is deterministic, but the CLI deliberately does not
+run a daemon or choose an alert provider for you.
+
 All reporting commands support `--json` where structured output is useful:
 
 ```sh
@@ -137,7 +142,8 @@ Start the documentation site with `npm run dev`. Production deploys serve
 - Each job receives an independent 256-bit secret. The secret is never present
   in JSON output or HTML exports.
 - Receipt signatures are checked in constant time. Duplicate nonces and stale
-  receipts are rejected before insertion.
+  receipts are rejected before insertion. The nonce index expires after seven
+  days; accepted local receipt history remains available for evidence exports.
 - `srr` has no network client, telemetry, analytics, or background process.
 - The static site has no cookies, tracking, remote fonts, or runtime CDN calls.
 
