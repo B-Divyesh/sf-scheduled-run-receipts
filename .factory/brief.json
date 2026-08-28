@@ -1,0 +1,11 @@
+{
+  "slug": "scheduled-run-receipts",
+  "title": "Scheduled Run Receipts",
+  "territory": "devtools-data",
+  "user": "A small-team operator with cron jobs, queues, or scheduled workflows who needs to prove both that a run occurred and that a missed expected run was noticed.",
+  "smallest_useful_product": "A CLI plus static viewer that reads an expected schedule, accepts signed run-start/run-finish receipts, detects missing/late/overlapping runs, and exports a weekly HTML evidence page.",
+  "artifact_class": "cli",
+  "monetization": "free",
+  "constraints": "Receipt endpoints need replay protection and short retention; all schedule and run metadata should remain local by default.",
+  "state": "RESEARCHED"
+}
