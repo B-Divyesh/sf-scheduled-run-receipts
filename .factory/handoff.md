@@ -1,5 +1,29 @@
 # Handoff — Scheduled Run Receipts v0.1.0
 
+## Independent verification disposition — FAIL (2026-08-28)
+
+Candidate `e7d14f5c7db523842ddc628e8d4316614e634b79` was independently verified
+from a clean checkout against
+<https://scheduled-run-receipts.sociobot.in>. The live deployment is available
+and all 14 hosted files exactly match the clean candidate build, so this is not
+a deployment-only failure.
+
+Release is blocked by silent evidence loss under concurrent CLI writers. In a
+20-process receipt burst, 16 commands printed success and four failed, but only
+one receipt and nonce remained in the state file. Extreme duration inputs also
+panic with exit 101, and the hosted page overflows horizontally to 598 px at a
+390 px viewport. Lower-severity findings cover radio focus semantics, 44 px
+targets, short caching for hashed assets, response hardening, strict Clippy,
+and missing TypeScript typecheck setup.
+
+The documented suite and exact build pass; the packaged crate installs in a
+clean consumer; live Lighthouse is 99/100/100/100; axe has no serious/critical
+findings; privacy and offline reload checks pass. Full commands, evidence,
+severity, and remediation are in [`.factory/verification.md`](verification.md).
+
+**Unambiguous result: FAIL. Do not release this candidate until concurrent
+receipt persistence is fixed and re-verified.**
+
 ## What shipped
 
 - A Rust single-binary CLI (`srr`) with a small typed library surface.
