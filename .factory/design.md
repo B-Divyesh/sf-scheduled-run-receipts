@@ -78,7 +78,8 @@ The hero illustration is an original generated raster,
 > restrained screenprint grain, negative space on the left; no text, logo,
 > dashboard, UI screenshot, gradient, or watermark.
 
-The source PNG and generator metadata are retained beside the optimized WebP.
+The source PNG and generator metadata are retained in `.factory/assets/`; only
+the optimized WebP is shipped to browsers.
 UI icons and small timeline marks are original CSS/SVG geometry authored in
 the repository; they use no third-party icon library. Generated asset rights
 follow the factory's OpenAI output terms; code-authored assets are MIT.

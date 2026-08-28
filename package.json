@@ -1,0 +1,24 @@
+{
+  "name": "scheduled-run-receipts-site",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "npm run build:site",
+    "build:site": "vite build && node scripts/stamp-sw.mjs",
+    "preview": "vite preview --host 127.0.0.1",
+    "test:site": "vitest run",
+    "test:e2e": "playwright test",
+    "test": "cargo test && npm run test:site && npm run build && npm run test:e2e"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.10.2",
+    "@fontsource-variable/instrument-sans": "5.2.8",
+    "@fontsource/ibm-plex-mono": "5.2.7",
+    "@playwright/test": "1.58.2",
+    "typescript": "5.9.2",
+    "vite": "7.3.6",
+    "vitest": "3.2.7"
+  }
+}
