@@ -1,0 +1,16 @@
+[
+  {
+    "id": "offline-reload",
+    "claim": "The site works offline after the first visit.",
+    "where": "Evidence viewer copy and offline status",
+    "test": "npm run test:e2e -- --grep @claim:offline-reload",
+    "sandbox": "Fresh browser context; wait for the production service worker, then set the context offline and reload."
+  },
+  {
+    "id": "local-viewer-private",
+    "claim": "A selected check report stays in the browser and is not uploaded.",
+    "where": "Evidence viewer file status",
+    "test": "npm run test:e2e -- --grep @claim:local-viewer-private",
+    "sandbox": "Fresh browser context; load a fixture report and assert the user-visible local result and same-origin-only requests."
+  }
+]

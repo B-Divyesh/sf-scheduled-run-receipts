@@ -25,6 +25,17 @@ srr --help
 The factory publishes release binaries later. The crate starts at `0.1.0` and
 is ready to package with `cargo package`.
 
+## Try the sample
+
+Run a disposable six-day backup ledger without configuring a state file:
+
+```sh
+srr demo
+```
+
+It prints a fresh temporary directory containing sample state and a standalone
+weekly evidence page. It never reads or writes `SRR_DATA` or `--data`.
+
 ## Usage
 
 Create an isolated monitor and register the expected schedule. Five-field cron
@@ -102,6 +113,7 @@ digest. It can be opened offline or attached to an incident record.
 
 ```text
 srr init [--force]
+srr demo
 srr job add <JOB> --schedule <CRON> [--grace <DURATION>]
 srr job list [--json]
 srr job key <JOB> --output <PATH> [--force]

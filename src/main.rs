@@ -9,8 +9,8 @@ use chrono::{DateTime, Utc};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use scheduled_run_receipts::{
     Event, FinishStatus, Job, KeyBundle, SlotState, accept_token, add_job, check,
-    default_data_path, export_html, init, issue_payload, load_state, parse_duration, random_secret,
-    save_state, sign_payload, week_bounds,
+    default_data_path, expected_between, export_html, init, issue_payload, load_state,
+    mutate_state, parse_duration, random_nonce, random_secret, sign_payload, week_bounds,
 };
 
 #[derive(Parser)]
@@ -25,6 +25,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Write a disposable sample ledger and weekly evidence page
+    Demo,
     /// Create an empty local receipt store
     Init {
         #[arg(long)]
@@ -207,132 +209,136 @@ fn main() -> ExitCode {
 fn run(cli: Cli) -> Result<u8> {
     let path = cli.data.unwrap_or_else(default_data_path);
     match cli.command {
+        Command::Demo => run_demo()?,
         Command::Init { force } => {
             init(&path, force)?;
             println!("Initialized local receipt store at {}", path.display());
         }
-        Command::Job { command } => {
-            let mut state = load_state(&path)?;
-            match command {
-                JobCommand::Add {
-                    job,
-                    schedule,
-                    grace,
-                } => {
-                    add_job(&mut state, &job, &schedule, parse_duration(&grace)?)?;
-                    save_state(&path, &state)?;
-                    println!("Added {job}: {schedule} UTC, grace {grace}");
+        Command::Job { command } => match command {
+            JobCommand::Add {
+                job,
+                schedule,
+                grace,
+            } => {
+                let grace_duration = parse_duration(&grace)?;
+                mutate_state(&path, |state| {
+                    add_job(state, &job, &schedule, grace_duration)
+                })?;
+                println!("Added {job}: {schedule} UTC, grace {grace}");
+            }
+            JobCommand::List { json } => {
+                let state = load_state(&path)?;
+                #[derive(serde::Serialize)]
+                struct PublicJob<'a> {
+                    name: &'a str,
+                    schedule: &'a str,
+                    grace_seconds: i64,
                 }
-                JobCommand::List { json } => {
-                    #[derive(serde::Serialize)]
-                    struct PublicJob<'a> {
-                        name: &'a str,
-                        schedule: &'a str,
-                        grace_seconds: i64,
+                let jobs: Vec<_> = state
+                    .jobs
+                    .values()
+                    .map(|j| PublicJob {
+                        name: &j.name,
+                        schedule: &j.schedule,
+                        grace_seconds: j.grace_seconds,
+                    })
+                    .collect();
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&jobs)?);
+                } else if jobs.is_empty() {
+                    println!("No jobs configured. Add one with `srr job add`.");
+                } else {
+                    for job in jobs {
+                        println!(
+                            "{}  {} UTC  grace {}s",
+                            job.name, job.schedule, job.grace_seconds
+                        );
                     }
-                    let jobs: Vec<_> = state
-                        .jobs
-                        .values()
-                        .map(|j| PublicJob {
-                            name: &j.name,
-                            schedule: &j.schedule,
-                            grace_seconds: j.grace_seconds,
-                        })
-                        .collect();
-                    if json {
-                        println!("{}", serde_json::to_string_pretty(&jobs)?);
-                    } else if jobs.is_empty() {
-                        println!("No jobs configured. Add one with `srr job add`.");
-                    } else {
-                        for job in jobs {
-                            println!(
-                                "{}  {} UTC  grace {}s",
-                                job.name, job.schedule, job.grace_seconds
-                            );
-                        }
-                    }
                 }
-                JobCommand::Key { job, output, force } => {
-                    let job = state
-                        .jobs
-                        .get(&job)
-                        .ok_or_else(|| anyhow!("unknown job `{job}`"))?;
-                    let bundle = KeyBundle {
-                        version: 1,
-                        job: job.name.clone(),
-                        schedule: job.schedule.clone(),
-                        secret: job.secret.clone(),
-                    };
-                    write_private(&output, &serde_json::to_vec_pretty(&bundle)?, force)?;
-                    println!("Wrote runner key for {} to {}", job.name, output.display());
-                }
-                JobCommand::RotateKey { job } => {
+            }
+            JobCommand::Key { job, output, force } => {
+                let state = load_state(&path)?;
+                let job = state
+                    .jobs
+                    .get(&job)
+                    .ok_or_else(|| anyhow!("unknown job `{job}`"))?;
+                let bundle = KeyBundle {
+                    version: 1,
+                    job: job.name.clone(),
+                    schedule: job.schedule.clone(),
+                    secret: job.secret.clone(),
+                };
+                write_private(&output, &serde_json::to_vec_pretty(&bundle)?, force)?;
+                println!("Wrote runner key for {} to {}", job.name, output.display());
+            }
+            JobCommand::RotateKey { job } => {
+                mutate_state(&path, |state| {
                     let target = state
                         .jobs
                         .get_mut(&job)
                         .ok_or_else(|| anyhow!("unknown job `{job}`"))?;
                     target.secret = random_secret();
-                    save_state(&path, &state)?;
-                    println!("Rotated key for {job}; export a new runner key before the next run");
-                }
+                    Ok(())
+                })?;
+                println!("Rotated key for {job}; export a new runner key before the next run");
             }
-        }
+        },
         Command::Run { command } => {
-            let mut state = load_state(&path)?;
-            let now = Utc::now();
-            let (job_name, payload) = match command {
-                RunCommand::Start(args) => {
-                    let job = state
-                        .jobs
-                        .get(&args.job)
-                        .ok_or_else(|| anyhow!("unknown job `{}`", args.job))?;
-                    (
-                        job.name.clone(),
-                        issue_payload(
-                            job,
-                            Event::Start,
-                            &args.run_id,
-                            args.scheduled_at,
-                            None,
-                            now,
-                        )?,
-                    )
-                }
-                RunCommand::Finish(args) => {
-                    let job = state
-                        .jobs
-                        .get(&args.job)
-                        .ok_or_else(|| anyhow!("unknown job `{}`", args.job))?;
-                    let scheduled = state
-                        .receipts
-                        .iter()
-                        .rev()
-                        .find(|r| {
-                            r.payload.job == args.job
-                                && r.payload.run_id == args.run_id
-                                && r.payload.event == Event::Start
-                        })
-                        .map(|r| r.payload.scheduled_at)
-                        .ok_or_else(|| {
-                            anyhow!("no accepted start receipt for run `{}`", args.run_id)
-                        })?;
-                    (
-                        job.name.clone(),
-                        issue_payload(
-                            job,
-                            Event::Finish,
-                            &args.run_id,
-                            Some(scheduled),
-                            Some(args.status.into()),
-                            now,
-                        )?,
-                    )
-                }
-            };
-            let secret = state.jobs[&job_name].secret.clone();
-            let token = sign_payload(&payload, &secret)?;
-            let receipt = accept_token(&mut state, &token, now)?;
-            save_state(&path, &state)?;
+            let receipt = mutate_state(&path, |state| {
+                let now = Utc::now();
+                let (job_name, payload) = match command {
+                    RunCommand::Start(args) => {
+                        let job = state
+                            .jobs
+                            .get(&args.job)
+                            .ok_or_else(|| anyhow!("unknown job `{}`", args.job))?;
+                        (
+                            job.name.clone(),
+                            issue_payload(
+                                job,
+                                Event::Start,
+                                &args.run_id,
+                                args.scheduled_at,
+                                None,
+                                now,
+                            )?,
+                        )
+                    }
+                    RunCommand::Finish(args) => {
+                        let job = state
+                            .jobs
+                            .get(&args.job)
+                            .ok_or_else(|| anyhow!("unknown job `{}`", args.job))?;
+                        let scheduled = state
+                            .receipts
+                            .iter()
+                            .rev()
+                            .find(|r| {
+                                r.payload.job == args.job
+                                    && r.payload.run_id == args.run_id
+                                    && r.payload.event == Event::Start
+                            })
+                            .map(|r| r.payload.scheduled_at)
+                            .ok_or_else(|| {
+                                anyhow!("no accepted start receipt for run `{}`", args.run_id)
+                            })?;
+                        (
+                            job.name.clone(),
+                            issue_payload(
+                                job,
+                                Event::Finish,
+                                &args.run_id,
+                                Some(scheduled),
+                                Some(args.status.into()),
+                                now,
+                            )?,
+                        )
+                    }
+                };
+                let secret = state.jobs[&job_name].secret.clone();
+                let token = sign_payload(&payload, &secret)?;
+                accept_token(state, &token, now)
+            })?;
             println!(
                 "Accepted {:?} receipt for {} / {} ({})",
                 receipt.payload.event,
@@ -379,9 +385,7 @@ fn run(cli: Cli) -> Result<u8> {
                 println!("{}", sign_payload(&payload, &bundle.secret)?);
             }
             ReceiptCommand::Accept { token } => {
-                let mut state = load_state(&path)?;
-                let receipt = accept_token(&mut state, &token, Utc::now())?;
-                save_state(&path, &state)?;
+                let receipt = mutate_state(&path, |state| accept_token(state, &token, Utc::now()))?;
                 println!(
                     "Accepted {:?} receipt for {} / {}",
                     receipt.payload.event, receipt.payload.job, receipt.payload.run_id
@@ -486,4 +490,75 @@ fn run(cli: Cli) -> Result<u8> {
         }
     }
     Ok(0)
+}
+
+fn run_demo() -> Result<()> {
+    let directory = std::env::temp_dir().join(format!(
+        "srr-demo-{}-{}",
+        std::process::id(),
+        random_nonce()
+    ));
+    fs::create_dir_all(&directory)?;
+    let data = directory.join("state.json");
+    let output = directory.join("weekly-evidence.html");
+    init(&data, false)?;
+    let now = Utc::now();
+    mutate_state(&data, |state| {
+        add_job(
+            state,
+            "database-backup",
+            "0 2 * * *",
+            parse_duration("15m")?,
+        )?;
+        let job = state.jobs["database-backup"].clone();
+        for (index, expected) in
+            expected_between(&job.schedule, now - chrono::Duration::days(6), now)?
+                .into_iter()
+                .enumerate()
+        {
+            if index == 2 {
+                continue;
+            }
+            let started = if index == 1 {
+                expected + chrono::Duration::minutes(20)
+            } else {
+                expected + chrono::Duration::minutes(2)
+            };
+            let run_id = format!("backup-demo-{:02}", index + 1);
+            let start = issue_payload(&job, Event::Start, &run_id, Some(expected), None, started)?;
+            let token = sign_payload(&start, &job.secret)?;
+            accept_token(state, &token, now)?;
+            if index != 4 {
+                let status = if index == 3 {
+                    FinishStatus::Failure
+                } else {
+                    FinishStatus::Success
+                };
+                let finish = issue_payload(
+                    &job,
+                    Event::Finish,
+                    &run_id,
+                    Some(expected),
+                    Some(status),
+                    started + chrono::Duration::minutes(1),
+                )?;
+                let token = sign_payload(&finish, &job.secret)?;
+                accept_token(state, &token, now)?;
+            }
+        }
+        Ok(())
+    })?;
+    let state = load_state(&data)?;
+    let report = check(&state, now - chrono::Duration::days(6), now)?;
+    fs::write(
+        &output,
+        export_html(&report, now - chrono::Duration::days(6), now)?,
+    )?;
+    println!("Demo ledger: {}", data.display());
+    println!("Demo weekly evidence: {}", output.display());
+    println!(
+        "Sample findings: {}",
+        serde_json::to_string(&report.counts)?
+    );
+    Ok(())
 }

@@ -26,6 +26,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Utc};
 use cron::Schedule;
+use fs2::FileExt;
 use hmac::{Hmac, Mac};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
@@ -152,10 +153,9 @@ pub fn default_data_path() -> PathBuf {
     if let Ok(value) = std::env::var("SRR_DATA") {
         return PathBuf::from(value);
     }
-    if cfg!(target_os = "windows") {
-        if let Ok(base) = std::env::var("LOCALAPPDATA") {
-            return PathBuf::from(base).join("srr").join("state.json");
-        }
+    #[cfg(target_os = "windows")]
+    if let Ok(base) = std::env::var("LOCALAPPDATA") {
+        return PathBuf::from(base).join("srr").join("state.json");
     }
     if let Ok(base) = std::env::var("XDG_DATA_HOME") {
         return PathBuf::from(base).join("srr").join("state.json");
@@ -184,7 +184,10 @@ pub fn save_state(path: &Path, state: &State) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let temp = path.with_extension("json.tmp");
+    // A unique temporary name prevents a direct library caller from colliding
+    // with another writer. CLI mutations are additionally serialized by the
+    // sibling lock file below.
+    let temp = path.with_extension(format!("tmp-{}-{}", std::process::id(), random_nonce()));
     let bytes = serde_json::to_vec_pretty(state)?;
     let mut options = fs::OpenOptions::new();
     options.create(true).truncate(true).write(true);
@@ -197,17 +200,59 @@ pub fn save_state(path: &Path, state: &State) -> Result<()> {
     file.write_all(&bytes)?;
     file.sync_all()?;
     fs::rename(temp, path)?;
+    #[cfg(unix)]
+    {
+        // Persist the rename itself, not just the temporary file contents.
+        fs::File::open(path.parent().unwrap_or_else(|| Path::new(".")))?.sync_all()?;
+    }
     Ok(())
 }
 
 pub fn init(path: &Path, force: bool) -> Result<()> {
-    if path.exists() && !force {
-        bail!(
-            "state already exists at {}; pass --force to replace it",
-            path.display()
-        );
+    with_state_lock(path, || {
+        if path.exists() && !force {
+            bail!(
+                "state already exists at {}; pass --force to replace it",
+                path.display()
+            );
+        }
+        save_state(path, &State::default())
+    })
+}
+
+/// Run one state transaction while holding an advisory, cross-process lock.
+///
+/// The lock is kept across load, mutation, and durable save so a command only
+/// reports success after its receipt is present in the on-disk ledger.
+pub fn mutate_state<T>(path: &Path, mutate: impl FnOnce(&mut State) -> Result<T>) -> Result<T> {
+    with_state_lock(path, || {
+        let mut state = load_state(path)?;
+        let value = mutate(&mut state)?;
+        save_state(path, &state)?;
+        Ok(value)
+    })
+}
+
+fn with_state_lock<T>(path: &Path, operation: impl FnOnce() -> Result<T>) -> Result<T> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
     }
-    save_state(path, &State::default())
+    let lock_path = path.with_extension("lock");
+    let mut options = fs::OpenOptions::new();
+    options.create(true).read(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let lock = options
+        .open(&lock_path)
+        .with_context(|| format!("cannot open state lock at {}", lock_path.display()))?;
+    lock.lock_exclusive()
+        .with_context(|| format!("cannot lock state at {}", lock_path.display()))?;
+    let result = operation();
+    FileExt::unlock(&lock).context("cannot unlock state")?;
+    result
 }
 
 pub fn valid_job_name(name: &str) -> bool {
@@ -229,13 +274,14 @@ pub fn parse_duration(value: &str) -> Result<Duration> {
     if count < 0 {
         bail!("duration cannot be negative");
     }
-    match unit {
-        "s" => Ok(Duration::seconds(count)),
-        "m" => Ok(Duration::minutes(count)),
-        "h" => Ok(Duration::hours(count)),
-        "d" => Ok(Duration::days(count)),
+    let duration = match unit {
+        "s" => Duration::try_seconds(count),
+        "m" => Duration::try_minutes(count),
+        "h" => Duration::try_hours(count),
+        "d" => Duration::try_days(count),
         _ => bail!("duration unit must be s, m, h, or d"),
-    }
+    };
+    duration.ok_or_else(|| anyhow!("duration is too large"))
 }
 
 pub fn parse_schedule(expression: &str) -> Result<Schedule> {
@@ -408,7 +454,10 @@ pub fn issue_payload(
     if run_id.trim().is_empty() || run_id.len() > 128 {
         bail!("run ID must be 1–128 characters");
     }
-    let scheduled_at = scheduled_at.unwrap_or(latest_expected(&job.schedule, now)?);
+    let scheduled_at = match scheduled_at {
+        Some(value) => value,
+        None => latest_expected(&job.schedule, now)?,
+    };
     match (&event, &status) {
         (Event::Start, None) | (Event::Finish, Some(_)) => {}
         (Event::Start, Some(_)) => bail!("start receipts cannot include a finish status"),
@@ -561,9 +610,11 @@ pub fn export_html(
     let digest = evidence_digest(report)?;
     let mut rows = String::new();
     for slot in &report.slots {
+        let state = format!("{:?}", slot.state);
+        let state_class = state.to_lowercase();
         rows.push_str(&format!("<tr><td>{}</td><td><time datetime=\"{}\">{}</time></td><td><span class=\"mark {}\">{}</span></td><td>{}</td></tr>",
             html_escape(&slot.job), slot.scheduled_at.to_rfc3339(), slot.scheduled_at.format("%a %H:%M UTC"),
-            format!("{:?}", slot.state).to_lowercase(), format!("{:?}", slot.state), html_escape(slot.run_id.as_deref().unwrap_or("—"))));
+            state_class, state, html_escape(slot.run_id.as_deref().unwrap_or("—"))));
     }
     if rows.is_empty() {
         rows.push_str(

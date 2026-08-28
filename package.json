@@ -7,10 +7,11 @@
     "dev": "vite --host 0.0.0.0",
     "build": "npm run build:site",
     "build:site": "vite build && node scripts/stamp-sw.mjs",
+    "typecheck": "tsc --project tsconfig.json",
     "preview": "vite preview --host 127.0.0.1",
     "test:site": "vitest run",
     "test:e2e": "playwright test",
-    "test": "cargo test && npm run test:site && npm run build && npm run test:e2e"
+    "test": "cargo test && npm run typecheck && npm run test:site && npm run build && npm run test:e2e"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.10.2",

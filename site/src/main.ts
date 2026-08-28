@@ -34,8 +34,12 @@ function formatTime(value: string) {
 }
 
 function selectSlot(button: HTMLButtonElement, slot: Slot) {
-  timeline?.querySelectorAll('[role="radio"]').forEach((node) => node.setAttribute('aria-checked', 'false'));
+  timeline?.querySelectorAll<HTMLButtonElement>('[role="radio"]').forEach((node) => {
+    node.setAttribute('aria-checked', 'false');
+    node.tabIndex = -1;
+  });
   button.setAttribute('aria-checked', 'true');
+  button.tabIndex = 0;
   if (!detail) return;
   const copy = slot.state === 'missing'
     ? 'No signed start arrived before the 15 minute grace window. The absence was recorded at 02:15 UTC.'
@@ -63,15 +67,22 @@ function renderReport(report: CheckReport) {
     button.className = `slot slot-${slot.state}`;
     button.setAttribute('role', 'radio');
     button.setAttribute('aria-checked', String(index === slots.length - 1));
+    button.tabIndex = index === slots.length - 1 ? 0 : -1;
     button.innerHTML = `<span class="slot-node" aria-hidden="true"></span><span>${formatDay(slot.scheduled_at)}</span><small>${stateLabel(slot.state)}</small>`;
     button.addEventListener('click', () => selectSlot(button, slot));
     button.addEventListener('keydown', (event) => {
-      if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
       event.preventDefault();
       const buttons = [...timeline.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
-      const next = (buttons.indexOf(button) + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
-      buttons[next].focus();
-      buttons[next].click();
+      const next = event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? buttons.length - 1
+          : (buttons.indexOf(button) + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
+      const nextButton = buttons[next];
+      if (!nextButton) return;
+      nextButton.focus();
+      nextButton.click();
     });
     timeline.append(button);
   });

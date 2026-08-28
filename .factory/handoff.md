@@ -1,28 +1,52 @@
 # Handoff — Scheduled Run Receipts v0.1.0
 
-## Independent verification disposition — FAIL (2026-08-28)
+## Repair verification — pending deployment (2026-08-28)
 
-Candidate `e7d14f5c7db523842ddc628e8d4316614e634b79` was independently verified
-from a clean checkout against
-<https://scheduled-run-receipts.sociobot.in>. The live deployment is available
-and all 14 hosted files exactly match the clean candidate build, so this is not
-a deployment-only failure.
+This repair resolves every finding in the independent verification of candidate
+`e7d14f5c7db523842ddc628e8d4316614e634b79`.
 
-Release is blocked by silent evidence loss under concurrent CLI writers. In a
-20-process receipt burst, 16 commands printed success and four failed, but only
-one receipt and nonce remained in the state file. Extreme duration inputs also
-panic with exit 101, and the hosted page overflows horizontally to 598 px at a
-390 px viewport. Lower-severity findings cover radio focus semantics, 44 px
-targets, short caching for hashed assets, response hardening, strict Clippy,
-and missing TypeScript typecheck setup.
+- Every mutation now holds a cross-process advisory lock across state load,
+  mutation, atomic replacement, and durable sync. Temporary filenames are
+  unique. A 20-process process-level regression asserts all 20 accepted
+  receipts and all 20 replay nonces remain in state.
+- Duration parsing uses Chrono's checked constructors, so both documented
+  `i64::MAX` duration inputs return exit 1 and leave the store unchanged.
+- The hero and document clip decorative horizontal overflow. Browser tests
+  assert `scrollWidth === clientWidth` at desktop and 390 px.
+- The evidence radio group has one roving Tab stop and supports Arrow/Home/End.
+  Every visible link, button, and file label is regression-tested at 44 px or
+  larger.
+- `staticwebapp.config.json` supplies immutable caching for hashed assets,
+  no-cache service-worker delivery, CSP, framing, permissions, referrer,
+  nosniff, and HSTS headers. A themed 404 artifact is shipped through the
+  static-host response override.
+- Strict `cargo clippy -D warnings` and `npm run typecheck` are repository
+  gates. The prior Clippy warnings are fixed.
 
-The documented suite and exact build pass; the packaged crate installs in a
-clean consumer; live Lighthouse is 99/100/100/100; axe has no serious/critical
-findings; privacy and offline reload checks pass. Full commands, evidence,
-severity, and remediation are in [`.factory/verification.md`](verification.md).
+Clean verification completed from this worktree:
 
-**Unambiguous result: FAIL. Do not release this candidate until concurrent
-receipt persistence is fixed and re-verified.**
+```text
+npm ci                                      PASS (0 vulnerabilities)
+npm test                                    PASS
+cargo fmt --all -- --check                  PASS
+cargo clippy --all-targets --all-features -- -D warnings   PASS
+npm run test:e2e                            PASS (10/10: desktop + 390 px)
+```
+
+The browser suite has zero console errors and zero axe serious/critical
+violations. It proves service-worker offline reload and checks that local JSON
+report loading makes only same-origin requests. Claim commands and sandbox
+details are in [`.factory/claims.json`](claims.json); the disposable CLI demo
+is documented in [`.factory/demo.md`](demo.md).
+
+Packaging was also verified after the repair commit:
+
+```text
+cargo package --locked                              PASS (14 files, 25.0 KiB compressed)
+CARGO_INSTALL_ROOT=<fresh temp> cargo install --locked --path target/package/scheduled-run-receipts-0.1.0   PASS
+<fresh temp>/bin/srr --version                      srr 0.1.0
+<fresh temp>/bin/srr demo                           PASS (state + weekly HTML paths printed)
+```
 
 ## What shipped
 
@@ -62,10 +86,13 @@ bytes, and the hero WebP is 61,360 bytes (all raw, before transfer compression).
 `npm test` was run successfully on 2026-08-28 and covers:
 
 - 5 Rust unit tests;
-- 2 Rust process-level CLI tests;
+- 5 Rust process-level CLI tests, including the exact 20-process persistence
+  burst, checked duration bounds, and disposable sample ledger;
 - 1 compiled Rust documentation example;
 - 2 site unit tests;
 - 4 Chromium end-to-end tests across desktop and 390 × 844 mobile viewports;
+- 10 Chromium end-to-end tests across desktop and 390 × 844 mobile viewports,
+  including offline reload, privacy, roving focus, 44 px targets, and overflow;
 - axe checks with zero serious or critical findings; and
 - production site build.
 
@@ -101,7 +128,8 @@ Raw Lighthouse JSON, URL verification JSON, and desktop/mobile captures are in
 
 - Alert delivery is deliberately out of scope; document integrations for
   common mail, PagerDuty-compatible, and chat hooks after observing real use.
-- The JSON state file is appropriate for small teams. A future SQLite backend
-  would improve concurrent writers and very high-frequency schedules.
+- The JSON state file is appropriate for small teams. Locking preserves all
+  accepted concurrent writes; a future SQLite backend could improve throughput
+  for very high-frequency schedules.
 - Release binaries and registry publication are factory-owned and were not
   published by this worker.
