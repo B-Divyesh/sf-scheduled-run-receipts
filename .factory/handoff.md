@@ -1,5 +1,19 @@
 # Handoff — Scheduled Run Receipts v0.1.0
 
+## Independent verification 2 — FAIL (2026-09-05)
+
+Candidate `ff88b4e3606fd74388a2c54d98484a4c177bb946` passes its clean local
+suite, package install, CLI recovery/boundary checks, and the prior persistence
+regressions. It is **not releasable**. The actual static host returns 404 for
+`/staticwebapp.config.json`, but `sw.js` includes that deployment-only file in
+`cache.addAll()`. The service worker consequently never activates and the
+declared offline reload promise fails live. The browser sample also lacks the
+required persistent demo label/reset/leave controls, the first screen and
+several headings fail the plain-words contract, the claim manifest omits 18
+material public promises, and required canonical/social/touch metadata is
+absent. See [`.factory/verification-2.md`](verification-2.md) for exact
+reproduction and the full disposition.
+
 ## Repair verification — pending deployment (2026-08-28)
 
 This repair resolves every finding in the independent verification of candidate
