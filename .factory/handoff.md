@@ -1,5 +1,32 @@
 # Handoff — Scheduled Run Receipts v0.1.0
 
+## Independent verification 3 — FAIL (2026-09-06)
+
+Implementation candidate `ff88b4e3606fd74388a2c54d98484a4c177bb946`
+and documentation baseline `b5eab89fbc9baf5de68383d363ad2ae14532fe7c`
+were verified from a fresh clone. Repair2 did not leave a distinct repository
+candidate, and the live site byte-matches the `ff88b4e` implementation.
+
+Verdict: **FAIL with 5 findings and 18 untested public claims.** The live
+offline claim is false because the service worker precaches Azure's
+deployment-only `staticwebapp.config.json`, which returns the expected 404 and
+causes worker installation to fail. The browser sample remains useful and
+does not change real browser data, but it lacks the required persistent demo
+label, reset, and leave-demo controls. The first screen and copy do not meet
+the plain-words contract, 18 public claims lack required claim entries and
+tagged tests, and required route metadata and shared shell details are absent.
+
+All earlier CLI, concurrency, duration, overflow, keyboard, target-size,
+caching, security-header, 404, Clippy, and TypeScript findings remain fixed.
+Clean `npm test`, both declared claim commands, formatting, strict Clippy,
+audit, package verification, and a fresh consumer install pass. Live Privacy,
+Terms, designed 404, keyboard, focus, reduced-motion, 200% text, invalid-file
+recovery, privacy-request, and axe checks pass. Fresh mobile Lighthouse scores
+99/100/100/100. No product code or deployment was changed.
+
+See [`.factory/verification-3.md`](verification-3.md) for exact evidence,
+actions, prior-finding disposition, and scope notes.
+
 ## Independent verification 2 — FAIL (2026-09-05)
 
 Candidate `ff88b4e3606fd74388a2c54d98484a4c177bb946` passes its clean local
